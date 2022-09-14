@@ -23,7 +23,8 @@ typedef enum
 {
     UNKNOWN,
     SHUTDOWN,
-    MODSEC_CHECK
+    MODSEC_CHECK_REQUEST,
+    MODSEC_CHECK_RESPONSE
 } task_type_t;
 
 typedef struct
@@ -41,8 +42,7 @@ typedef struct
             ErlNifBinary uri;
             ErlNifBinary body;
             ERL_NIF_TERM headers;
-            unsigned int num_headers;
-        } request;
+        } d;
     } data;
 } task_t;
 

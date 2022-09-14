@@ -36,14 +36,25 @@ task_t *alloc_init_task(task_type_t type, ModSecurity *modsec, RulesSet *rules, 
         return NULL;
     }
 
-    if (type == MODSEC_CHECK)
+    if (type == MODSEC_CHECK_REQUEST)
     {
         assert(num_orig_terms == 3);
-        task->data.request.headers = enif_make_copy(task->env, orig_terms[1]);
+        task->data.d.headers = enif_make_copy(task->env, orig_terms[1]);
         if (
-            !enif_inspect_binary(task->env, enif_make_copy(task->env, orig_terms[0]), &task->data.request.uri) ||
-            !enif_get_list_length(task->env, task->data.request.headers, &task->data.request.num_headers) ||
-            !enif_inspect_binary(task->env, enif_make_copy(task->env, orig_terms[2]), &task->data.request.body))
+            !enif_inspect_binary(task->env, enif_make_copy(task->env, orig_terms[0]), &task->data.d.uri) ||
+            !enif_inspect_binary(task->env, enif_make_copy(task->env, orig_terms[2]), &task->data.d.body))
+        {
+            free_task(task);
+            return NULL;
+        }
+    }
+    else if (type == MODSEC_CHECK_RESPONSE)
+    {
+
+        assert(num_orig_terms == 2);
+        task->data.d.headers = enif_make_copy(task->env, orig_terms[0]);
+        if (
+            !enif_inspect_binary(task->env, enif_make_copy(task->env, orig_terms[1]), &task->data.d.body))
         {
             free_task(task);
             return NULL;
@@ -64,17 +75,16 @@ void msc_logdata(void *log, const void *data)
     return;
 }
 
-static ERL_NIF_TERM check(task_t *task)
+static ERL_NIF_TERM check_request(task_t *task)
 {
     Transaction *transaction = NULL;
     ERL_NIF_TERM head;
     ERL_NIF_TERM *tuple;
     ErlNifBinary req_header, req_header_val;
-    int rc;
     int tuple_arity = 2;
 
     transaction = msc_new_transaction(task->modsec, task->rules, NULL);
-    ERL_NIF_TERM list = task->data.request.headers;
+    ERL_NIF_TERM list = task->data.d.headers;
     while (enif_get_list_cell(task->env, list, &head, (ERL_NIF_TERM *)&list))
     {
         if (!enif_get_tuple(task->env, head, &tuple_arity, &tuple) ||
@@ -90,11 +100,65 @@ static ERL_NIF_TERM check(task_t *task)
 
         msc_add_request_header(transaction, (unsigned char *)req_header.data, (unsigned char *)req_header_val.data);
     }
-    msc_append_request_body(transaction, (unsigned char *)task->data.request.body.data, task->data.request.body.size);
+    msc_append_request_body(transaction, (unsigned char *)task->data.d.body.data, task->data.d.body.size);
     msc_process_connection(transaction, "127.0.0.1", 80, "127.0.0.1", 80);
-    msc_process_uri(transaction, (char *)task->data.request.uri.data, "CONNECT", "1.1");
+    msc_process_uri(transaction, (char *)task->data.d.uri.data, "CONNECT", "1.1");
     msc_process_request_headers(transaction);
     msc_process_request_body(transaction);
+    msc_process_logging(transaction);
+    msc_transaction_cleanup(transaction);
+
+    ModSecurityIntervention intervention;
+    intervention.status = 200;
+    intervention.url = NULL;
+    intervention.log = NULL;
+    intervention.disruptive = 0;
+    int inter = msc_intervention(transaction, &intervention);
+
+    if (inter)
+    {
+        return enif_make_tuple2(
+            task->env,
+            enif_make_atom(task->env, "error"),
+            task->ref);
+    }
+    else
+    {
+        return enif_make_tuple2(
+            task->env,
+            enif_make_atom(task->env, "ok"),
+            task->ref);
+    }
+}
+
+static ERL_NIF_TERM check_response(task_t *task)
+{
+    Transaction *transaction = NULL;
+    ERL_NIF_TERM head;
+    ERL_NIF_TERM *tuple;
+    ErlNifBinary resp_header, resp_header_val;
+    int tuple_arity = 2;
+
+    transaction = msc_new_transaction(task->modsec, task->rules, NULL);
+    ERL_NIF_TERM list = task->data.d.headers;
+    while (enif_get_list_cell(task->env, list, &head, (ERL_NIF_TERM *)&list))
+    {
+        if (!enif_get_tuple(task->env, head, &tuple_arity, &tuple) ||
+            !enif_inspect_binary(task->env, tuple[0], &resp_header) ||
+            !enif_inspect_binary(task->env, tuple[1], &resp_header_val))
+        {
+            return enif_make_tuple3(
+                task->env,
+                enif_make_atom(task->env, "error"),
+                task->ref,
+                enif_make_string(task->env, "invalid response headers", ERL_NIF_LATIN1));
+        }
+
+        msc_add_response_header(transaction, (unsigned char *)resp_header.data, (unsigned char *)resp_header_val.data);
+    }
+    msc_append_response_body(transaction, (unsigned char *)task->data.d.body.data, task->data.d.body.size);
+    msc_process_response_headers(transaction, 200, "HTTP 2.0");
+    msc_process_response_body(transaction);
     msc_process_logging(transaction);
     msc_transaction_cleanup(transaction);
 
@@ -139,9 +203,13 @@ void *async_worker(void *arg)
             free_task(task);
             break;
         }
-        else if (task->type == MODSEC_CHECK)
+        else if (task->type == MODSEC_CHECK_REQUEST)
         {
-            result = check(task);
+            result = check_request(task);
+        }
+        else if (task->type == MODSEC_CHECK_RESPONSE)
+        {
+            result = check_response(task);
         }
         else
         {
@@ -155,7 +223,7 @@ void *async_worker(void *arg)
     return NULL;
 }
 
-static ERL_NIF_TERM modsec_check(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+static ERL_NIF_TERM modsec_check_request(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
 {
     ctx_t *ctx;
     task_t *task;
@@ -176,7 +244,38 @@ static ERL_NIF_TERM modsec_check(ErlNifEnv *env, int argc, const ERL_NIF_TERM ar
         return enif_make_badarg(env);
 
     ERL_NIF_TERM orig_terms[] = {argv[3], argv[4], argv[5]};
-    task = alloc_init_task(MODSEC_CHECK, ctx->modsec, ctx->rules, argv[1], pid, 3, orig_terms);
+    task = alloc_init_task(MODSEC_CHECK_REQUEST, ctx->modsec, ctx->rules, argv[1], pid, 3, orig_terms);
+
+    if (!task)
+        return enif_make_badarg(env);
+
+    async_queue_push(ctx->queue, task);
+
+    return enif_make_atom(env, "ok");
+}
+
+static ERL_NIF_TERM modsec_check_response(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    ctx_t *ctx;
+    task_t *task;
+    ErlNifPid pid;
+
+    if (argc != 5)
+        return enif_make_badarg(env);
+
+    modsec_privdata_t *priv = (modsec_privdata_t *)enif_priv_data(env);
+
+    if (!enif_get_resource(env, argv[0], priv->modsec_rt, (void **)(&ctx)))
+        return enif_make_badarg(env);
+
+    if (!enif_is_ref(env, argv[1]))
+        return enif_make_badarg(env);
+
+    if (!enif_get_local_pid(env, argv[2], &pid))
+        return enif_make_badarg(env);
+
+    ERL_NIF_TERM orig_terms[] = {argv[3], argv[4]};
+    task = alloc_init_task(MODSEC_CHECK_RESPONSE, ctx->modsec, ctx->rules, argv[1], pid, 2, orig_terms);
 
     if (!task)
         return enif_make_badarg(env);
@@ -236,7 +335,8 @@ static ERL_NIF_TERM modsec_create_ctx(ErlNifEnv *env, int argc, const ERL_NIF_TE
 
 static ErlNifFunc modsec_nif_funcs[] =
     {
-        {"check", 6, modsec_check},
+        {"check_request", 6, modsec_check_request},
+        {"check_response", 5, modsec_check_response},
         {"create_ctx", 1, modsec_create_ctx},
 };
 
