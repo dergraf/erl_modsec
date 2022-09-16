@@ -1,11 +1,11 @@
 -module(modsec_nif).
--export([init/0, check_request/6, check_response/5, create_ctx/1]).
+-export([init/0, check_request/7, check_response/5, create_ctx/1]).
 
 -on_load(init/0).
 
 init() ->
     Dir =
-        case code:priv_dir(bcrypt) of
+        case code:priv_dir(erl_modsec) of
             {error, bad_name} ->
                 case code:which(modsec) of
                     Filename when is_list(Filename) ->
@@ -23,7 +23,7 @@ init() ->
 create_ctx(_ConfFiles) ->
     erlang:nif_error({nif_not_loaded, module, ?MODULE, line, ?LINE}).
 
-check_request(_Ctx, _Ref, _Pid, _URI, _Headers, _Body) ->
+check_request(_Ctx, _Ref, _Pid, _Method, _URI, _Headers, _Body) ->
     erlang:nif_error({nif_not_loaded, module, ?MODULE, line, ?LINE}).
 
 check_response(_Ctx, _Ref, _Pid, _Headers, _Body) ->

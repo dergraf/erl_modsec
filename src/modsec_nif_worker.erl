@@ -2,7 +2,7 @@
 -behaviour(gen_server).
 
 -export([start_link/0]).
--export([check_request/3, check_response/2]).
+-export([check_request/4, check_response/2]).
 
 %% gen_server
 -export([
@@ -20,8 +20,10 @@
 
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
-check_request(RequestUri, RequestHeaders, RequestBody) ->
-    gen_server:call(?MODULE, {check_request, RequestUri, RequestHeaders, RequestBody}, infinity).
+check_request(RequestMethod, RequestUri, RequestHeaders, RequestBody) ->
+    gen_server:call(
+        ?MODULE, {check_request, RequestMethod, RequestUri, RequestHeaders, RequestBody}, infinity
+    ).
 
 check_response(RequestHeaders, RequestBody) ->
     gen_server:call(?MODULE, {check_response, RequestHeaders, RequestBody}, infinity).
@@ -45,24 +47,28 @@ init([]) ->
 terminate(shutdown, _) -> ok.
 
 handle_call(
-    {check_request, RequestUri, RequestHeaders, RequestBody}, _From, #state{context = Ctx} = State
+    {check_request, RequestMethod, RequestUri, RequestHeaders, RequestBody},
+    _From,
+    #state{context = Ctx} = State
 ) ->
     Ref = make_ref(),
-    ok = modsec_nif:check_request(Ctx, Ref, self(), RequestUri, RequestHeaders, RequestBody),
+    ok = modsec_nif:check_request(
+        Ctx, Ref, self(), RequestMethod, RequestUri, RequestHeaders, RequestBody
+    ),
     receive
-        {ok, Ref} ->
-            {reply, ok, State};
-        {error, Ref} ->
-            {reply, error, State}
+        {ok, Ref, Logs} ->
+            {reply, {ok, Logs}, State};
+        {error, Ref, Logs} ->
+            {reply, {error, Logs}, State}
     end;
 handle_call({check_response, ResponseHeaders, ResponseBody}, _From, #state{context = Ctx} = State) ->
     Ref = make_ref(),
     ok = modsec_nif:check_response(Ctx, Ref, self(), ResponseHeaders, ResponseBody),
     receive
-        {ok, Ref} ->
-            {reply, ok, State};
-        {error, Ref} ->
-            {reply, error, State}
+        {ok, Ref, Logs} ->
+            {reply, {ok, Logs}, State};
+        {error, Ref, Logs} ->
+            {reply, {error, Logs}, State}
     end;
 handle_call(Msg, _, _) ->
     exit({unknown_call, Msg}).
@@ -76,34 +82,63 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
 check_request_test() ->
     modsec_nif_worker:start_link(),
-    ?assert(
-        ok ==
-            modsec_nif_worker:check_request(<<"/foo/bar">>, [{<<"foo">>, <<"bar">>}], <<"foobar">>)
+    ?assertMatch(
+        {ok, []},
+        modsec_nif_worker:check_request(
+            <<"POST">>,
+            <<"/foo/bar">>,
+            [
+                {<<"Content-Type">>, <<"text/plain">>},
+                {<<"Content-Length">>, <<"6">>},
+                {<<"Host">>, <<"localhost">>},
+                {<<"foo">>, <<"bar">>}
+            ],
+            <<"foobar">>
+        )
     ),
-    ?assert(
-        ok ==
-            modsec_nif_worker:check_request(
-                <<"/test/artists.php?artist=0+div+1+union%23foo*%2F*bar%0D%0Aselect%23foo%0D%0A1%2C2%2Ccurrent_user">>,
-                [],
-                <<"hello">>
-            )
+    ?assertMatch(
+        {error, [_ | _]},
+        modsec_nif_worker:check_request(
+            <<"POST">>,
+            <<"/test/artists.php?artist=0+div+1+union%23foo*%2F*bar%0D%0Aselect%23foo%0D%0A1%2C2%2Ccurrent_user">>,
+            [
+                {<<"Content-Type">>, <<"text/plain">>},
+                {<<"Content-Length">>, <<"5">>},
+                {<<"Host">>, <<"localhost">>}
+            ],
+            <<"hello">>
+        )
     ),
-    ?assert(
-        ok ==
-            modsec_nif_worker:check_request(
-                <<"/foo/bar">>,
-                [{<<"Content-Type">>, <<"application/json">>}],
-                <<"{\"hello\":\"artist=0+div+1+union%23foo*%2F*bar%0D%0Aselect%23foo%0D%0A1%2C2%2Ccurrent_user\"}">>
-            )
+    Json =
+        <<"{\"hello\":\"artist=0+div+1+union%23foo*%2F*bar%0D%0Aselect%23foo%0D%0A1%2C2%2Ccurrent_user\"}">>,
+    ?assertMatch(
+        {error, [_ | _]},
+        modsec_nif_worker:check_request(
+            <<"POST">>,
+            <<"/foo/bar">>,
+            [
+                {
+                    <<"Content-Type">>, <<"application/json">>
+                },
+                {<<"Content-Length">>, integer_to_binary(byte_size(Json))},
+                {<<"Host">>, <<"localhost">>}
+            ],
+            Json
+        )
     ).
 
 check_response_test() ->
     modsec_nif_worker:start_link(),
-    ?assert(
-        ok ==
-            modsec_nif_worker:check_response([{<<"foo">>, <<"bar">>}], <<"foobar">>)
+    ?assertMatch(
+        {ok, []},
+        modsec_nif_worker:check_response([{<<"foo">>, <<"bar">>}], <<"foobar">>)
+    ),
+    ?assertMatch(
+        {ok, []},
+        modsec_nif_worker:check_response(
+            [{<<"Content-Type">>, <<"application/json">>}],
+            <<"{\"foo\":\"artist=0+div+1+union%23foo*%2F*bar%0D%0Aselect%23foo%0D%0A1%2C2%2Ccurrent_user\"}">>
+        )
     ).
-
-%% Insert tests here.
 
 -endif.

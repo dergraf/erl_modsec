@@ -35,10 +35,12 @@ typedef struct
     ERL_NIF_TERM ref;
     ModSecurity *modsec;
     RulesSet *rules;
+    ERL_NIF_TERM logs;
     union
     {
         struct
         {
+            ErlNifBinary method;
             ErlNifBinary uri;
             ErlNifBinary body;
             ERL_NIF_TERM headers;
