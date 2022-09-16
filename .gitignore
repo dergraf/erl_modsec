@@ -60,3 +60,5 @@ rebar3.crashdump
 
 priv/*
 env.mk
+.erlang.mk/
+*.swp
