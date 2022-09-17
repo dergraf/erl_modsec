@@ -1,9 +1,6 @@
 name: Build and Tests
 
-on:
-  push:
-  pull_request:
-  workflow_call:
+on: [push, pull_request, workflow_call]
 
 jobs:
   build_test:
@@ -11,15 +8,15 @@ jobs:
   
     steps:
       - name: "Install toolchain"
-      - run: |
-          apt-get update -y \
-          && apt-get upgrade -y \
-          && apt-get install -y wget libmodsecurity-dev gnupg2 build-essential \
-          && wget https://packages.erlang-solutions.com/erlang-solutions_1.0_all.deb \
-          && dpkg -i erlang-solutions_1.0_all.deb \
-          && apt-get update -y \
-          && apt-get install -y erlang
+        run: |
+          apt-get update -y
+          apt-get upgrade -y
+          apt-get install -y wget libmodsecurity-dev gnupg2 build-essential
+          wget https://packages.erlang-solutions.com/erlang-solutions_1.0_all.deb
+          dpkg -i erlang-solutions_1.0_all.deb
+          apt-get update -y
+          apt-get install -y erlang
   
       - name: "Build"
-      - uses: actions/checkout@v3
-      - run: make
+        uses: actions/checkout@v3
+        run: make
