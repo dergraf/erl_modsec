@@ -7,8 +7,7 @@ jobs:
     runs-on: ubuntu-latest
   
     steps:
-      - name: "Install toolchain"
-        run: |
+      - run: |
           apt-get update -y
           apt-get upgrade -y
           apt-get install -y wget libmodsecurity-dev gnupg2 build-essential
@@ -16,7 +15,5 @@ jobs:
           dpkg -i erlang-solutions_1.0_all.deb
           apt-get update -y
           apt-get install -y erlang
-  
-      - name: "Build"
-        uses: actions/checkout@v3
-        run: make
+      - uses: actions/checkout@v3
+      - run: make
