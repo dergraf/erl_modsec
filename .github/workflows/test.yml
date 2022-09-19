@@ -1,0 +1,20 @@
+name: Build and Tests
+
+on: [push, pull_request, workflow_call]
+
+jobs:
+  build_test:
+    runs-on: ubuntu-latest
+  
+    steps:
+      - name: Install tool chains
+        run: |
+          sudo apt-get update -y
+          sudo apt-get upgrade -y
+          sudo apt-get install -y wget libmodsecurity-dev gnupg2 build-essential
+          wget https://packages.erlang-solutions.com/erlang-solutions_1.0_all.deb
+          sudo dpkg -i erlang-solutions_1.0_all.deb
+          sudo apt-get update -y
+          sudo apt-get install -y erlang
+      - uses: actions/checkout@v3
+      - run: make

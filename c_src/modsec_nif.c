@@ -6,6 +6,13 @@
 #include <erl_nif.h>
 #include "modsec_nif.h"
 
+// to supress no previous prototype warnings
+void free_task(task_t *);
+task_t *alloc_task(task_type_t);
+task_t *alloc_init_task(task_type_t, ModSecurity *, RulesSet *, ERL_NIF_TERM, ErlNifPid, int, const ERL_NIF_TERM[]);
+void msc_logdata(void *, const void *);
+void *async_worker(void *);
+
 void free_task(task_t *task)
 {
     if (task->env != NULL)
@@ -67,14 +74,15 @@ task_t *alloc_init_task(task_type_t type, ModSecurity *modsec, RulesSet *rules, 
     return task;
 }
 
-void msc_logdata(void *cb_data, const char *data)
+void msc_logdata(void *cb_data, const void *data)
 {
-    struct timeval tv;
+    // struct timeval tv; <- FIXME unused
     task_t *task = (task_t *)cb_data;
-    size_t len = strlen(data);
+    size_t len = strlen((const char *)data) + 1; // to make sure that trailing NULL (aka \0) is also copied
     ErlNifBinary bin;
     enif_alloc_binary(len, &bin);
-    strncpy(bin.data, data, len);
+    // FIXME consider to change to memcpy instead
+    strncpy((char *)bin.data, (const char *)data, len);
     ERL_NIF_TERM log_binary = enif_make_binary(task->env, &bin);
     task->logs = enif_make_list_cell(task->env, log_binary, task->logs);
     return;
@@ -82,7 +90,6 @@ void msc_logdata(void *cb_data, const char *data)
 
 static int process_intervention(task_t *task, Transaction *transaction, char *log_str)
 {
-    char *log = NULL;
     ModSecurityIntervention intervention;
     intervention.status = 200;
     intervention.url = NULL;
@@ -93,17 +100,16 @@ static int process_intervention(task_t *task, Transaction *transaction, char *lo
         return 0;
     };
 
-    log = intervention.log;
     if (intervention.log == NULL)
     {
-        log = "(no log message was specified)";
-    }
-    msc_logdata((void *)task, intervention.log);
-
-    if (intervention.log != NULL)
-    {
+        msc_logdata((void *)task, "(no log message was specified)");
+    } else {
+        msc_logdata((void *)task, intervention.log);
+        // FIXME This may cause segfault or even worse memory corruptions
+        // since intervention.log allocation didn't happen in this scope!
         free(intervention.log);
     }
+
     return 1;
 }
 
@@ -119,7 +125,7 @@ static ERL_NIF_TERM check_request(task_t *task)
     ERL_NIF_TERM list = task->data.d.headers;
     while (enif_get_list_cell(task->env, list, &head, (ERL_NIF_TERM *)&list))
     {
-        if (!enif_get_tuple(task->env, head, &tuple_arity, &tuple) ||
+        if (!enif_get_tuple(task->env, head, &tuple_arity, (const ERL_NIF_TERM **)&tuple) ||
             !enif_inspect_binary(task->env, tuple[0], &header_name) ||
             !enif_inspect_binary(task->env, tuple[1], &header_value))
         {
@@ -134,7 +140,7 @@ static ERL_NIF_TERM check_request(task_t *task)
                                  (const unsigned char *)header_value.data, header_value.size);
     }
     char method_str[task->data.d.method.size + 1];
-    strncpy(method_str, task->data.d.method.data, task->data.d.method.size);
+    strncpy(method_str, (const char *)task->data.d.method.data, task->data.d.method.size);
     method_str[task->data.d.method.size] = '\0';
     msc_append_request_body(transaction, (unsigned char *)task->data.d.body.data, task->data.d.body.size);
     msc_process_connection(transaction, "127.0.0.1", 80, "127.0.0.1", 80);
@@ -178,7 +184,7 @@ static ERL_NIF_TERM check_response(task_t *task)
     ERL_NIF_TERM list = task->data.d.headers;
     while (enif_get_list_cell(task->env, list, &head, (ERL_NIF_TERM *)&list))
     {
-        if (!enif_get_tuple(task->env, head, &tuple_arity, &tuple) ||
+        if (!enif_get_tuple(task->env, head, &tuple_arity, (const ERL_NIF_TERM **)&tuple) ||
             !enif_inspect_binary(task->env, tuple[0], &header_name) ||
             !enif_inspect_binary(task->env, tuple[1], &header_value))
         {
@@ -347,7 +353,7 @@ static ERL_NIF_TERM modsec_create_ctx(ErlNifEnv *env, int argc, const ERL_NIF_TE
         unsigned char conf_file_string[conf_file.size + 1];
         memcpy(conf_file_string, conf_file.data, conf_file.size);
         conf_file_string[conf_file.size] = '\0';
-        msc_rules_add_file(ctx->rules, conf_file_string, &modsec_error);
+        msc_rules_add_file(ctx->rules, (const char *)conf_file_string, &modsec_error);
         fprintf(stdout, "loading file %s\n", conf_file_string);
     }
     if (modsec_error != NULL)
