@@ -78,11 +78,11 @@ void msc_logdata(void *cb_data, const void *data)
 {
     // struct timeval tv; <- FIXME unused
     task_t *task = (task_t *)cb_data;
-    size_t len = strlen((const char *)data) + 1; // to make sure that trailing NULL (aka \0) is also copied
+    size_t len = strlen((const char *)data); // to make sure that trailing NULL (aka \0) is also copied
     ErlNifBinary bin;
     enif_alloc_binary(len, &bin);
     // FIXME consider to change to memcpy instead
-    strncpy((char *)bin.data, (const char *)data, len);
+    memcpy(bin.data, data, len);
     ERL_NIF_TERM log_binary = enif_make_binary(task->env, &bin);
     task->logs = enif_make_list_cell(task->env, log_binary, task->logs);
     return;
@@ -103,7 +103,9 @@ static int process_intervention(task_t *task, Transaction *transaction, char *lo
     if (intervention.log == NULL)
     {
         msc_logdata((void *)task, "(no log message was specified)");
-    } else {
+    }
+    else
+    {
         msc_logdata((void *)task, intervention.log);
         // FIXME This may cause segfault or even worse memory corruptions
         // since intervention.log allocation didn't happen in this scope!
