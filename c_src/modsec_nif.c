@@ -144,10 +144,15 @@ static ERL_NIF_TERM check_request(task_t *task)
     char method_str[task->data.d.method.size + 1];
     strncpy(method_str, (const char *)task->data.d.method.data, task->data.d.method.size);
     method_str[task->data.d.method.size] = '\0';
+
+    char uri_str[task->data.d.uri.size + 1];
+    strncpy(uri_str, (const char *)task->data.d.uri.data, task->data.d.uri.size);
+    uri_str[task->data.d.uri.size] = '\0';
+
     msc_append_request_body(transaction, (unsigned char *)task->data.d.body.data, task->data.d.body.size);
     msc_process_connection(transaction, "127.0.0.1", 80, "127.0.0.1", 80);
     int i1 = process_intervention(task, transaction, "process connection %i\n");
-    msc_process_uri(transaction, (const char *)task->data.d.uri.data, (const char *)method_str, "1.1");
+    msc_process_uri(transaction, (const char *)uri_str, (const char *)method_str, "1.1");
     int i2 = process_intervention(task, transaction, "process uri %i\n");
     msc_process_request_headers(transaction);
     int i3 = process_intervention(task, transaction, "process request headers %i\n");
