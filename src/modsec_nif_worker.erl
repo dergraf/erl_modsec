@@ -18,22 +18,30 @@
     context
 }).
 
-start_link(ConfDirectoryPattern) -> gen_server:start_link({local, ?MODULE}, ?MODULE, [ConfDirectoryPattern], []).
+start_link(ConfDirectoryPattern) ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [ConfDirectoryPattern], []).
 
 check_request(RequestMethod, RequestUri, RequestHeaders, RequestBody) ->
+    %% RequestMethod and RequestUri must be 0 terminated
     gen_server:call(
-        ?MODULE, {check_request, RequestMethod, RequestUri, RequestHeaders, RequestBody}, infinity
+        ?MODULE,
+        {check_request, <<RequestMethod/binary, 0>>, <<RequestUri/binary, 0>>, RequestHeaders,
+            RequestBody},
+        infinity
     ).
 
-check_response(RequestHeaders, RequestBody) ->
-    gen_server:call(?MODULE, {check_response, RequestHeaders, RequestBody}, infinity).
+check_response(ResponseHeaders, ResponseBody) ->
+    gen_server:call(
+        ?MODULE, {check_response, ResponseHeaders, ResponseBody}, infinity
+    ).
 
 init([ConfDirectoryPattern]) ->
     ConfFiles = lists:filtermap(
         fun(F) ->
             case filelib:is_regular(F) of
                 true ->
-                    {true, erlang:list_to_binary(F)};
+                    Filename = erlang:list_to_binary(F),
+                    {true, <<Filename/binary, 0>>};
                 false ->
                     false
             end

@@ -76,12 +76,10 @@ task_t *alloc_init_task(task_type_t type, ModSecurity *modsec, RulesSet *rules, 
 
 void msc_logdata(void *cb_data, const void *data)
 {
-    // struct timeval tv; <- FIXME unused
     task_t *task = (task_t *)cb_data;
     size_t len = strlen((const char *)data); // to make sure that trailing NULL (aka \0) is also copied
     ErlNifBinary bin;
     enif_alloc_binary(len, &bin);
-    // FIXME consider to change to memcpy instead
     memcpy(bin.data, data, len);
     ERL_NIF_TERM log_binary = enif_make_binary(task->env, &bin);
     task->logs = enif_make_list_cell(task->env, log_binary, task->logs);
@@ -141,18 +139,10 @@ static ERL_NIF_TERM check_request(task_t *task)
                                  (const unsigned char *)header_name.data, header_name.size,
                                  (const unsigned char *)header_value.data, header_value.size);
     }
-    char method_str[task->data.d.method.size + 1];
-    strncpy(method_str, (const char *)task->data.d.method.data, task->data.d.method.size);
-    method_str[task->data.d.method.size] = '\0';
-
-    char uri_str[task->data.d.uri.size + 1];
-    strncpy(uri_str, (const char *)task->data.d.uri.data, task->data.d.uri.size);
-    uri_str[task->data.d.uri.size] = '\0';
-
     msc_append_request_body(transaction, (unsigned char *)task->data.d.body.data, task->data.d.body.size);
     msc_process_connection(transaction, "127.0.0.1", 80, "127.0.0.1", 80);
     int i1 = process_intervention(task, transaction, "process connection %i\n");
-    msc_process_uri(transaction, (const char *)uri_str, (const char *)method_str, "1.1");
+    msc_process_uri(transaction, (const char *)task->data.d.uri.data, (const char *)task->data.d.method.data, "1.1");
     int i2 = process_intervention(task, transaction, "process uri %i\n");
     msc_process_request_headers(transaction);
     int i3 = process_intervention(task, transaction, "process request headers %i\n");
@@ -357,11 +347,8 @@ static ERL_NIF_TERM modsec_create_ctx(ErlNifEnv *env, int argc, const ERL_NIF_TE
         {
             return enif_make_badarg(env);
         }
-        unsigned char conf_file_string[conf_file.size + 1];
-        memcpy(conf_file_string, conf_file.data, conf_file.size);
-        conf_file_string[conf_file.size] = '\0';
-        msc_rules_add_file(ctx->rules, (const char *)conf_file_string, &modsec_error);
-        fprintf(stdout, "loading file %s\n", conf_file_string);
+        msc_rules_add_file(ctx->rules, (const char *)conf_file.data, &modsec_error);
+        fprintf(stdout, "loading file %s\n", conf_file.data);
     }
     if (modsec_error != NULL)
     {
