@@ -62,3 +62,5 @@ priv/*
 env.mk
 .erlang.mk/
 *.swp
+test/coreruleset
+test/01_crs.conf

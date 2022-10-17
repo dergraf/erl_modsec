@@ -3,19 +3,19 @@
 -include_lib("eunit/include/eunit.hrl").
 
 check_request_test() ->
-    modsec_nif_worker:start_link(<<"./test/*.conf">>),
+    modsec_nif_worker:start_link(<<"./test/**/*.conf">>),
     ?assertMatch(
-        {error, [_ | _]},
+        {ok, []},
         modsec_nif_worker:check_request(
             <<"POST">>,
             <<"/foo/bar">>,
             [
-                {<<"Content-Type">>, <<"text/plain">>},
-                {<<"Content-Length">>, <<"6">>},
+                {<<"Content-Type">>, <<"application/json">>},
+                {<<"Content-Length">>, <<"10">>},
                 {<<"Host">>, <<"localhost">>},
                 {<<"foo">>, <<"bar">>}
             ],
-            <<"foobar">>
+            <<"\"foobar\"">>
         )
     ),
 
@@ -51,7 +51,7 @@ check_request_test() ->
     ).
 
 check_response_test() ->
-    modsec_nif_worker:start_link(<<"./test/*.conf">>),
+    modsec_nif_worker:start_link(<<"./test/**/*.conf">>),
     ?assertMatch(
         {ok, []},
         modsec_nif_worker:check_response([{<<"foo">>, <<"bar">>}], <<"foobar">>)
