@@ -2,9 +2,12 @@ PROJECT = erl_modsec
 PROJECT_DESCRIPTION = New project
 PROJECT_VERSION = 0.1.0
 
+.PHONY: default
+default: all ;
 
 clean::
 	rm -Rf test/coreruleset
+
 
 .PHONY: test
 test:
@@ -19,6 +22,7 @@ test/coreruleset:
 		cd coreruleset && \
 		git sparse-checkout set rules && \
 		rm rules/REQUEST-922-MULTIPART-ATTACK.conf
+
 
 
 include erlang.mk
