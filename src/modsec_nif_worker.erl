@@ -2,7 +2,7 @@
 -behaviour(gen_server).
 
 -export([start_link/1]).
--export([check_request/4, check_response/2]).
+-export([check_request/4, check_request/5, check_response/2, check_response/3]).
 
 %% gen_server
 -export([
@@ -22,17 +22,23 @@ start_link(ConfDirectoryPattern) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [ConfDirectoryPattern], []).
 
 check_request(RequestMethod, RequestUri, RequestHeaders, RequestBody) ->
+    check_request(?MODULE, RequestMethod, RequestUri, RequestHeaders, RequestBody).
+
+check_request(NameOrPid, RequestMethod, RequestUri, RequestHeaders, RequestBody) ->
     %% RequestMethod and RequestUri must be 0 terminated
     gen_server:call(
-        ?MODULE,
+        NameOrPid,
         {check_request, <<RequestMethod/binary, 0>>, <<RequestUri/binary, 0>>, RequestHeaders,
             RequestBody},
         infinity
     ).
 
 check_response(ResponseHeaders, ResponseBody) ->
+    check_response(?MODULE, ResponseHeaders, ResponseBody).
+
+check_response(NameOrPid, ResponseHeaders, ResponseBody) ->
     gen_server:call(
-        ?MODULE, {check_response, ResponseHeaders, ResponseBody}, infinity
+        NameOrPid, {check_response, ResponseHeaders, ResponseBody}, infinity
     ).
 
 init([ConfDirectoryPattern]) ->
