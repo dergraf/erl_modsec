@@ -14,9 +14,10 @@ typedef struct
 {
     async_queue_t *queue;
     ErlNifThreadOpts *topts;
-    ErlNifTid tid;
+    ErlNifTid *tids;
     ModSecurity *modsec;
     RulesSet *rules;
+    int nr_of_threads;
 } ctx_t;
 
 typedef enum

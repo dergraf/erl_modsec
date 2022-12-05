@@ -328,7 +328,7 @@ static ERL_NIF_TERM modsec_create_ctx(ErlNifEnv *env, int argc, const ERL_NIF_TE
     const char *modsec_error = NULL;
     ERL_NIF_TERM ret, head;
 
-    if (argc != 1)
+    if (argc != 2)
         return enif_make_badarg(env);
 
     modsec_privdata_t *priv = (modsec_privdata_t *)enif_priv_data(env);
@@ -336,6 +336,9 @@ static ERL_NIF_TERM modsec_create_ctx(ErlNifEnv *env, int argc, const ERL_NIF_TE
     if (ctx == NULL)
         return enif_make_badarg(env);
 
+    enif_get_int(env, argv[1], &ctx->nr_of_threads);
+    fprintf(stdout, "Number of modsec_nif worker threads %d\n", ctx->nr_of_threads);
+    ctx->tids = enif_alloc(ctx->nr_of_threads * sizeof(ErlNifTid));
     ctx->modsec = msc_init();
     ctx->rules = msc_create_rules_set();
     msc_set_log_cb(ctx->modsec, msc_logdata);
@@ -357,10 +360,13 @@ static ERL_NIF_TERM modsec_create_ctx(ErlNifEnv *env, int argc, const ERL_NIF_TE
 
     ctx->queue = async_queue_create("modsec_queue_mutex", "modsec_queue_condvar");
     ctx->topts = enif_thread_opts_create("modsec_thread_opts");
-    if (enif_thread_create("modsec_worker", &ctx->tid, async_worker, ctx, ctx->topts) != 0 || modsec_error != NULL)
+    for (size_t i = 0; i < ctx->nr_of_threads; i++)
     {
-        enif_release_resource(ctx);
-        return enif_make_badarg(env);
+        if (enif_thread_create("modsec_worker", &ctx->tids[i], async_worker, ctx, ctx->topts) != 0 || modsec_error != NULL)
+        {
+            enif_release_resource(ctx);
+            return enif_make_badarg(env);
+        }
     }
     ret = enif_make_resource(env, ctx);
     enif_release_resource(ctx);
@@ -371,7 +377,7 @@ static ErlNifFunc modsec_nif_funcs[] =
     {
         {"check_request", 7, modsec_check_request},
         {"check_response", 5, modsec_check_response},
-        {"create_ctx", 1, modsec_create_ctx},
+        {"create_ctx", 2, modsec_create_ctx},
 };
 
 static void modsec_rt_dtor(ErlNifEnv *env, void *obj)
@@ -381,7 +387,11 @@ static void modsec_rt_dtor(ErlNifEnv *env, void *obj)
     void *result = NULL;
 
     async_queue_push(ctx->queue, task);
-    enif_thread_join(ctx->tid, &result);
+    for (size_t i = 0; i < ctx->nr_of_threads; i++)
+    {
+        enif_thread_join(ctx->tids[i], &result);
+    }
+
     async_queue_destroy(ctx->queue);
     enif_thread_opts_destroy(ctx->topts);
 }
