@@ -61,8 +61,8 @@ init([ConfDirectoryPattern, NumWorkers]) ->
         end,
         filelib:wildcard(binary_to_list(ConfDirectoryPattern))
     ),
-    Ctx = modsec_nif:create_ctx(ConfFiles, NumWorkers),
-    {ok, #state{context = Ctx}}.
+    Ctx = modsec_nif:create_ctx(ConfFiles),
+    {ok, #state{context = Ctx, num_workers = NumWorkers}}.
 
 terminate(shutdown, _) -> ok.
 
@@ -98,25 +98,23 @@ run_check(
     Ctx
 ) ->
     spawn_monitor(fun() ->
-        Ref = make_ref(),
-        ok = modsec_nif:check_request(
-            Ctx, Ref, self(), RequestMethod, RequestUri, RequestHeaders, RequestBody
-        ),
-        receive
-            {ok, Ref, Logs} ->
+        case
+            modsec_nif:check_request(
+                Ctx, RequestMethod, RequestUri, RequestHeaders, RequestBody
+            )
+        of
+            {ok, Logs} ->
                 gen_server:reply(From, {ok, Logs});
-            {error, Ref, Logs} ->
+            {error, Logs} ->
                 gen_server:reply(From, {error, Logs})
         end
     end);
 run_check({check_response, ResponseHeaders, ResponseBody}, From, Ctx) ->
     spawn_monitor(fun() ->
-        Ref = make_ref(),
-        ok = modsec_nif:check_response(Ctx, Ref, self(), ResponseHeaders, ResponseBody),
-        receive
-            {ok, Ref, Logs} ->
+        case modsec_nif:check_response(Ctx, ResponseHeaders, ResponseBody) of
+            {ok, Logs} ->
                 gen_server:reply(From, {ok, Logs});
-            {error, Ref, Logs} ->
+            {error, Logs} ->
                 gen_server:reply(From, {error, Logs})
         end
     end).

@@ -1,8 +1,6 @@
 #ifndef ERLANG_MODSEC_MODSEC_NIF_H
 #define ERLANG_MODSEC_MODSEC_NIF_H
 
-#include "async_queue.h"
-
 typedef unsigned char byte;
 
 typedef struct
@@ -12,9 +10,6 @@ typedef struct
 
 typedef struct
 {
-    async_queue_t *queue;
-    ErlNifThreadOpts *topts;
-    ErlNifTid *tids;
     ModSecurity *modsec;
     RulesSet *rules;
     int nr_of_threads;
@@ -23,7 +18,6 @@ typedef struct
 typedef enum
 {
     UNKNOWN,
-    SHUTDOWN,
     MODSEC_CHECK_REQUEST,
     MODSEC_CHECK_RESPONSE
 } task_type_t;

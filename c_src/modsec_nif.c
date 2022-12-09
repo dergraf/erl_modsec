@@ -9,9 +9,9 @@
 // to supress no previous prototype warnings
 void free_task(task_t *);
 task_t *alloc_task(task_type_t);
-task_t *alloc_init_task(task_type_t, ModSecurity *, RulesSet *, ERL_NIF_TERM, ErlNifPid, int, const ERL_NIF_TERM[]);
+task_t *alloc_init_task(task_type_t, ModSecurity *, RulesSet *, int, const ERL_NIF_TERM[]);
 void msc_logdata(void *, const void *);
-void *async_worker(void *);
+ERL_NIF_TERM run_task(task_t *task);
 
 void free_task(task_t *task)
 {
@@ -30,10 +30,9 @@ task_t *alloc_task(task_type_t type)
     return task;
 }
 
-task_t *alloc_init_task(task_type_t type, ModSecurity *modsec, RulesSet *rules, ERL_NIF_TERM ref, ErlNifPid pid, int num_orig_terms, const ERL_NIF_TERM orig_terms[])
+task_t *alloc_init_task(task_type_t type, ModSecurity *modsec, RulesSet *rules, int num_orig_terms, const ERL_NIF_TERM orig_terms[])
 {
     task_t *task = alloc_task(type);
-    task->pid = pid;
     task->env = enif_alloc_env();
     task->modsec = modsec;
     task->rules = rules;
@@ -70,7 +69,6 @@ task_t *alloc_init_task(task_type_t type, ModSecurity *modsec, RulesSet *rules, 
         }
     }
 
-    task->ref = enif_make_copy(task->env, ref);
     return task;
 }
 
@@ -153,18 +151,16 @@ static ERL_NIF_TERM check_request(task_t *task)
 
     if (i1 | i2 | i3 | i4)
     {
-        return enif_make_tuple3(
+        return enif_make_tuple2(
             task->env,
             enif_make_atom(task->env, "error"),
-            task->ref,
             task->logs);
     }
     else
     {
-        return enif_make_tuple3(
+        return enif_make_tuple2(
             task->env,
             enif_make_atom(task->env, "ok"),
-            task->ref,
             task->logs);
     }
 }
@@ -206,96 +202,38 @@ static ERL_NIF_TERM check_response(task_t *task)
 
     if (i1 | i2)
     {
-        return enif_make_tuple3(
+        return enif_make_tuple2(
             task->env,
             enif_make_atom(task->env, "error"),
-            task->ref,
             task->logs);
     }
     else
     {
-        return enif_make_tuple3(
+        return enif_make_tuple2(
             task->env,
             enif_make_atom(task->env, "ok"),
-            task->ref,
             task->logs);
     }
 }
 
-void *async_worker(void *arg)
+ERL_NIF_TERM run_task(task_t *task)
 {
-    ctx_t *ctx;
-    task_t *task;
-
-    ERL_NIF_TERM result;
-
-    ctx = (ctx_t *)arg;
-
-    while (1)
+    if (task->type == MODSEC_CHECK_REQUEST)
     {
-        task = (task_t *)async_queue_pop(ctx->queue);
 
-        if (task->type == SHUTDOWN)
-        {
-            free_task(task);
-            break;
-        }
-        else if (task->type == MODSEC_CHECK_REQUEST)
-        {
-            result = check_request(task);
-        }
-        else if (task->type == MODSEC_CHECK_RESPONSE)
-        {
-            result = check_response(task);
-        }
-        else
-        {
-            errx(1, "Unexpected task type: %i", task->type);
-        }
-
-        enif_send(NULL, &task->pid, task->env, result);
-        free_task(task);
+        return check_request(task);
     }
-
-    return NULL;
+    else if (task->type == MODSEC_CHECK_RESPONSE)
+    {
+        return check_response(task);
+    }
+    return enif_make_atom(task->env, "unexpected_task_error");
 }
 
 static ERL_NIF_TERM modsec_check_request(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
 {
     ctx_t *ctx;
     task_t *task;
-    ErlNifPid pid;
-
-    if (argc != 7)
-        return enif_make_badarg(env);
-
-    modsec_privdata_t *priv = (modsec_privdata_t *)enif_priv_data(env);
-
-    if (!enif_get_resource(env, argv[0], priv->modsec_rt, (void **)(&ctx)))
-        return enif_make_badarg(env);
-
-    if (!enif_is_ref(env, argv[1]))
-        return enif_make_badarg(env);
-
-    if (!enif_get_local_pid(env, argv[2], &pid))
-        return enif_make_badarg(env);
-
-    ERL_NIF_TERM orig_terms[] = {argv[3], argv[4], argv[5], argv[6]};
-    task = alloc_init_task(MODSEC_CHECK_REQUEST, ctx->modsec, ctx->rules, argv[1], pid, 4, orig_terms);
-
-    if (!task)
-        return enif_make_badarg(env);
-
-    async_queue_push(ctx->queue, task);
-
-    return enif_make_atom(env, "ok");
-}
-
-static ERL_NIF_TERM modsec_check_response(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
-{
-    ctx_t *ctx;
-    task_t *task;
-    ErlNifPid pid;
 
     if (argc != 5)
         return enif_make_badarg(env);
@@ -305,21 +243,35 @@ static ERL_NIF_TERM modsec_check_response(ErlNifEnv *env, int argc, const ERL_NI
     if (!enif_get_resource(env, argv[0], priv->modsec_rt, (void **)(&ctx)))
         return enif_make_badarg(env);
 
-    if (!enif_is_ref(env, argv[1]))
-        return enif_make_badarg(env);
-
-    if (!enif_get_local_pid(env, argv[2], &pid))
-        return enif_make_badarg(env);
-
-    ERL_NIF_TERM orig_terms[] = {argv[3], argv[4]};
-    task = alloc_init_task(MODSEC_CHECK_RESPONSE, ctx->modsec, ctx->rules, argv[1], pid, 2, orig_terms);
+    ERL_NIF_TERM orig_terms[] = {argv[1], argv[2], argv[3], argv[4]};
+    task = alloc_init_task(MODSEC_CHECK_REQUEST, ctx->modsec, ctx->rules, 4, orig_terms);
 
     if (!task)
         return enif_make_badarg(env);
 
-    async_queue_push(ctx->queue, task);
+    return run_task(task);
+}
 
-    return enif_make_atom(env, "ok");
+static ERL_NIF_TERM modsec_check_response(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    ctx_t *ctx;
+    task_t *task;
+
+    if (argc != 3)
+        return enif_make_badarg(env);
+
+    modsec_privdata_t *priv = (modsec_privdata_t *)enif_priv_data(env);
+
+    if (!enif_get_resource(env, argv[0], priv->modsec_rt, (void **)(&ctx)))
+        return enif_make_badarg(env);
+
+    ERL_NIF_TERM orig_terms[] = {argv[1], argv[2]};
+    task = alloc_init_task(MODSEC_CHECK_RESPONSE, ctx->modsec, ctx->rules, 2, orig_terms);
+
+    if (!task)
+        return enif_make_badarg(env);
+
+    return run_task(task);
 }
 
 static ERL_NIF_TERM modsec_create_ctx(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
@@ -328,7 +280,7 @@ static ERL_NIF_TERM modsec_create_ctx(ErlNifEnv *env, int argc, const ERL_NIF_TE
     const char *modsec_error = NULL;
     ERL_NIF_TERM ret, head;
 
-    if (argc != 2)
+    if (argc != 1)
         return enif_make_badarg(env);
 
     modsec_privdata_t *priv = (modsec_privdata_t *)enif_priv_data(env);
@@ -337,8 +289,6 @@ static ERL_NIF_TERM modsec_create_ctx(ErlNifEnv *env, int argc, const ERL_NIF_TE
         return enif_make_badarg(env);
 
     enif_get_int(env, argv[1], &ctx->nr_of_threads);
-    fprintf(stdout, "Number of modsec_nif worker threads %d\n", ctx->nr_of_threads);
-    ctx->tids = enif_alloc(ctx->nr_of_threads * sizeof(ErlNifTid));
     ctx->modsec = msc_init();
     ctx->rules = msc_create_rules_set();
     msc_set_log_cb(ctx->modsec, msc_logdata);
@@ -358,16 +308,6 @@ static ERL_NIF_TERM modsec_create_ctx(ErlNifEnv *env, int argc, const ERL_NIF_TE
         fprintf(stderr, "init error %s\n", modsec_error);
     }
 
-    ctx->queue = async_queue_create("modsec_queue_mutex", "modsec_queue_condvar");
-    ctx->topts = enif_thread_opts_create("modsec_thread_opts");
-    for (size_t i = 0; i < ctx->nr_of_threads; i++)
-    {
-        if (enif_thread_create("modsec_worker", &ctx->tids[i], async_worker, ctx, ctx->topts) != 0 || modsec_error != NULL)
-        {
-            enif_release_resource(ctx);
-            return enif_make_badarg(env);
-        }
-    }
     ret = enif_make_resource(env, ctx);
     enif_release_resource(ctx);
     return ret;
@@ -375,25 +315,14 @@ static ERL_NIF_TERM modsec_create_ctx(ErlNifEnv *env, int argc, const ERL_NIF_TE
 
 static ErlNifFunc modsec_nif_funcs[] =
     {
-        {"check_request", 7, modsec_check_request},
-        {"check_response", 5, modsec_check_response},
-        {"create_ctx", 2, modsec_create_ctx},
+        {"check_request", 5, modsec_check_request, ERL_NIF_DIRTY_JOB_CPU_BOUND},
+        {"check_response", 3, modsec_check_response, ERL_NIF_DIRTY_JOB_CPU_BOUND},
+        {"create_ctx", 1, modsec_create_ctx},
 };
 
 static void modsec_rt_dtor(ErlNifEnv *env, void *obj)
 {
-    ctx_t *ctx = (ctx_t *)obj;
-    task_t *task = alloc_task(SHUTDOWN);
-    void *result = NULL;
-
-    async_queue_push(ctx->queue, task);
-    for (size_t i = 0; i < ctx->nr_of_threads; i++)
-    {
-        enif_thread_join(ctx->tids[i], &result);
-    }
-
-    async_queue_destroy(ctx->queue);
-    enif_thread_opts_destroy(ctx->topts);
+    return;
 }
 
 static int on_load(ErlNifEnv *env, void **priv_data, ERL_NIF_TERM load_info)
