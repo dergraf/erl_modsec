@@ -3,7 +3,6 @@
 
 -export([start_link/1, start_link/2]).
 -export([check_request/4, check_request/5, check_response/2, check_response/3]).
--export([fprof_init/0, fprof_helper/1]).
 
 %% gen_server
 -export([
@@ -79,13 +78,11 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 run(
     #state{
         waiting = [{Check, From} | Waiting],
-        running = Running0,
         num_workers = NumWorkers,
+        running = Running0,
         context = Ctx
     } = State
-) when
-    map_size(Running0) < NumWorkers
-->
+) when map_size(Running0) < NumWorkers ->
     {RunPid, RunRef} = run_check(Check, From, Ctx),
     Running1 = maps:put(RunRef, RunPid, Running0),
     run(State#state{waiting = Waiting, running = Running1});
@@ -118,49 +115,3 @@ run_check({check_response, ResponseHeaders, ResponseBody}, From, Ctx) ->
                 gen_server:reply(From, {error, Logs})
         end
     end).
-
-fprof_init() ->
-    modsec_nif_worker:start_link(<<"./test/**/*.conf">>).
-
-fprof_helper(N) ->
-    Json =
-        <<"{\"hello\":\"artist=0+div+1+union%23foo*%2F*bar%0D%0Aselect%23foo%0D%0A1%2C2%2Ccurrent_user\"}">>,
-    times(
-        fun() ->
-            modsec_nif_worker:check_request(
-                <<"POST">>,
-                <<"/foo/bar">>,
-                [
-                    {
-                        <<"Content-Type">>, <<"application/json">>
-                    },
-                    {<<"Content-Length">>, integer_to_binary(byte_size(Json))},
-                    {<<"Host">>, <<"localhost">>}
-                ],
-                Json
-            )
-        end,
-        N
-    ).
-
-times(Function, N) ->
-    Self = self(),
-    Procs = lists:foldl(
-        fun(I, Acc) ->
-            Pid = spawn(fun() ->
-                Self ! {I, apply(Function, [])}
-            end),
-            maps:put(I, Pid, Acc)
-        end,
-        maps:new(),
-        lists:seq(1, N)
-    ),
-    receive_results(Procs).
-
-receive_results(Procs) when map_size(Procs) > 0 ->
-    receive
-        {I, _} ->
-            receive_results(maps:remove(I, Procs))
-    end;
-receive_results(_) ->
-    ok.

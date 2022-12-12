@@ -10,21 +10,12 @@ typedef struct
 
 typedef struct
 {
-    ModSecurity *modsec;
     RulesSet *rules;
-    int nr_of_threads;
+    ModSecurity *modsec;
 } ctx_t;
-
-typedef enum
-{
-    UNKNOWN,
-    MODSEC_CHECK_REQUEST,
-    MODSEC_CHECK_RESPONSE
-} task_type_t;
 
 typedef struct
 {
-    task_type_t type;
     ErlNifEnv *env;
     ErlNifPid pid;
     ERL_NIF_TERM ref;
