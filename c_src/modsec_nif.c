@@ -264,6 +264,9 @@ static ErlNifFunc modsec_nif_funcs[] =
 
 static void modsec_rt_dtor(ErlNifEnv *env, void *obj)
 {
+    ctx_t *ctx = (ctx_t *)obj;
+    msc_rules_cleanup(ctx->rules);
+    msc_cleanup(ctx->modsec);
     return;
 }
 
