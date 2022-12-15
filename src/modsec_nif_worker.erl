@@ -17,8 +17,7 @@
 -record(state, {
     waiting = [],
     running = maps:new(),
-    num_workers,
-    context
+    num_workers
 }).
 
 start_link(ConfDirectoryPattern) ->
@@ -60,8 +59,8 @@ init([ConfDirectoryPattern, NumWorkers]) ->
         end,
         filelib:wildcard(binary_to_list(ConfDirectoryPattern))
     ),
-    Ctx = modsec_nif:create_ctx(ConfFiles),
-    {ok, #state{context = Ctx, num_workers = NumWorkers}}.
+    ok = modsec_nif:load_conf_files(ConfFiles),
+    {ok, #state{num_workers = NumWorkers}}.
 
 terminate(shutdown, _) -> ok.
 
@@ -79,11 +78,10 @@ run(
     #state{
         waiting = [{Check, From} | Waiting],
         num_workers = NumWorkers,
-        running = Running0,
-        context = Ctx
+        running = Running0
     } = State
 ) when map_size(Running0) < NumWorkers ->
-    {RunPid, RunRef} = run_check(Check, From, Ctx),
+    {RunPid, RunRef} = run_check(Check, From),
     Running1 = maps:put(RunRef, RunPid, Running0),
     run(State#state{waiting = Waiting, running = Running1});
 run(State) ->
@@ -91,13 +89,12 @@ run(State) ->
 
 run_check(
     {check_request, RequestMethod, RequestUri, RequestHeaders, RequestBody},
-    From,
-    Ctx
+    From
 ) ->
     spawn_monitor(fun() ->
         case
             modsec_nif:check_request(
-                Ctx, RequestMethod, RequestUri, RequestHeaders, RequestBody
+                RequestMethod, RequestUri, RequestHeaders, RequestBody
             )
         of
             {ok, Logs} ->
@@ -106,9 +103,9 @@ run_check(
                 gen_server:reply(From, {error, Logs})
         end
     end);
-run_check({check_response, ResponseHeaders, ResponseBody}, From, Ctx) ->
+run_check({check_response, ResponseHeaders, ResponseBody}, From) ->
     spawn_monitor(fun() ->
-        case modsec_nif:check_response(Ctx, ResponseHeaders, ResponseBody) of
+        case modsec_nif:check_response(ResponseHeaders, ResponseBody) of
             {ok, Logs} ->
                 gen_server:reply(From, {ok, Logs});
             {error, Logs} ->
