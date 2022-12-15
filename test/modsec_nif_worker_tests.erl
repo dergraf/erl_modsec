@@ -3,10 +3,10 @@
 -include_lib("eunit/include/eunit.hrl").
 
 check_test_() ->
-    [
+    {inparallel, [
         fun check_request/0,
         fun check_response/0
-    ].
+    ]}.
 
 check_request() ->
     modsec_nif_worker:start_link(<<"./test/**/*.conf">>),
@@ -46,9 +46,7 @@ check_request() ->
             <<"POST">>,
             <<"/foo/bar">>,
             [
-                {
-                    <<"Content-Type">>, <<"application/json">>
-                },
+                {<<"Content-Type">>, <<"application/json">>},
                 {<<"Content-Length">>, integer_to_binary(byte_size(Json))},
                 {<<"Host">>, <<"localhost">>}
             ],
