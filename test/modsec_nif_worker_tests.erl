@@ -9,10 +9,11 @@ check_test_() ->
     ].
 
 check_request() ->
-    modsec_nif_worker:start_link(<<"./test/**/*.conf">>),
+    {ok, Pid} = modsec_nif_worker:start_link(<<"./test/**/*.conf">>),
     ?assertMatch(
         {ok, []},
         modsec_nif_worker:check_request(
+            Pid,
             <<"POST">>,
             <<"/foo/bar">>,
             [
@@ -28,6 +29,7 @@ check_request() ->
     ?assertMatch(
         {error, [_ | _]},
         modsec_nif_worker:check_request(
+            Pid,
             <<"POST">>,
             <<"/test/artists.php?artist=0+div+1+union%23foo*%2F*bar%0D%0Aselect%23foo%0D%0A1%2C2%2Ccurrent_user">>,
             [
@@ -43,6 +45,7 @@ check_request() ->
     ?assertMatch(
         {error, [_ | _]},
         modsec_nif_worker:check_request(
+            Pid,
             <<"POST">>,
             <<"/foo/bar">>,
             [
@@ -57,14 +60,15 @@ check_request() ->
     ).
 
 check_response() ->
-    modsec_nif_worker:start_link(<<"./test/**/*.conf">>),
+    {ok, Pid} = modsec_nif_worker:start_link(<<"./test/**/*.conf">>),
     ?assertMatch(
         {ok, []},
-        modsec_nif_worker:check_response([{<<"foo">>, <<"bar">>}], <<"foobar">>)
+        modsec_nif_worker:check_response(Pid, [{<<"foo">>, <<"bar">>}], <<"foobar">>)
     ),
     ?assertMatch(
         {ok, []},
         modsec_nif_worker:check_response(
+            Pid,
             [{<<"Content-Type">>, <<"application/json">>}],
             <<"{\"foo\":\"artist=0+div+1+union%23foo*%2F*bar%0D%0Aselect%23foo%0D%0A1%2C2%2Ccurrent_user\"}">>
         )

@@ -2,7 +2,7 @@
 -behaviour(gen_server).
 
 -export([start_link/1, start_link/2]).
--export([check_request/4, check_request/5, check_response/2, check_response/3]).
+-export([check_request/5, check_response/3]).
 
 %% gen_server
 -export([
@@ -25,10 +25,7 @@ start_link(ConfDirectoryPattern) ->
     NumWorkers = erlang:system_info(schedulers),
     start_link(ConfDirectoryPattern, NumWorkers).
 start_link(ConfDirectoryPattern, NumWorkers) ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [ConfDirectoryPattern, NumWorkers], []).
-
-check_request(RequestMethod, RequestUri, RequestHeaders, RequestBody) ->
-    check_request(?MODULE, RequestMethod, RequestUri, RequestHeaders, RequestBody).
+    gen_server:start_link(?MODULE, [ConfDirectoryPattern, NumWorkers], []).
 
 check_request(NameOrPid, RequestMethod, RequestUri, RequestHeaders, RequestBody) ->
     %% RequestMethod and RequestUri must be 0 terminated
@@ -38,9 +35,6 @@ check_request(NameOrPid, RequestMethod, RequestUri, RequestHeaders, RequestBody)
             RequestBody},
         infinity
     ).
-
-check_response(ResponseHeaders, ResponseBody) ->
-    check_response(?MODULE, ResponseHeaders, ResponseBody).
 
 check_response(NameOrPid, ResponseHeaders, ResponseBody) ->
     gen_server:call(
